@@ -1,0 +1,73 @@
+@startuml orbkey-cdk-stack
+!theme plain
+skinparam componentStyle rectangle
+skinparam defaultFontSize 12
+skinparam arrowThickness 1.5
+
+title OrbkeyStack — CDK Infrastructure Components (consumed by orbkey-ts, AWS SDK v3)
+
+package "AWS Account" as AWS {
+    cloud "OrbkeyStack\n(CDK Stack)" as Stack
+
+    component "KMS CMK\n(OrbkeyKey)" as KMS {
+        note right of KMS
+          • enable_key_rotation = true
+          • alias: alias/orbkey-default
+          • removal_policy = RETAIN
+        end note
+    }
+
+    component "S3 Bucket\n(OrbkeyBucket)" as S3 {
+        note right of S3
+          • versioned = true
+          • SSE-S3 encryption
+          • enforce_ssl = true
+          • block_public_access = BLOCK_ALL
+          • removal_policy = RETAIN
+        end note
+    }
+
+    component "Bucket Policy\n(SSL enforcement)" as BucketPolicy
+
+    component "IAM User\n(OrbkeyUser)" as IAMUser
+
+    component "IAM Access Key\n(OrbkeyAccessKey)" as AccessKey
+
+    component "CloudFormation\nOutputs" as Outputs {
+        portout "region" as out_region
+        portout "account_id" as out_acct
+        portout "bucket_name" as out_bucket
+        portout "vault_prefix" as out_prefix
+        portout "vault_object_key" as out_objkey
+        portout "kms_key_arn" as out_kms
+        portout "access_key_id" as out_akid
+        portout "secret_access_key\n[SENSITIVE]" as out_sak
+    }
+
+    ' Stack creates resources
+    Stack -d-> KMS : creates
+    Stack -d-> S3 : creates
+    Stack -d-> IAMUser : creates
+    Stack -d-> AccessKey : creates
+    Stack -d-> Outputs : exposes
+
+    ' Bucket Policy
+    BucketPolicy -r-> S3 : denies non-SSL
+
+    ' IAM User permissions (exactly what SDK v3 calls require)
+    IAMUser -d-> KMS : "kms:Decrypt\nkms:GenerateDataKey\nkms:DescribeKey"
+    IAMUser -d-> S3 : "s3:ListBucket (prefix vaults/default/*)\ns3:GetObject (read + HEAD)\ns3:PutObject (incl. If-Match/If-None-Match)\nscope: vaults/default/*"
+
+    ' Access Key belongs to user
+    AccessKey -u-> IAMUser : belongs to
+}
+
+' sts:GetCallerIdentity is allowed for any principal — no IAM grant needed.
+
+' Outputs translate into local config:
+'   bucket_name      -> ~/.config/orbkey/config.json  "bucket"
+'   kms_key_arn      -> ~/.config/orbkey/config.json  "kms_key_id"
+'   vault_object_key -> ~/.config/orbkey/config.json  "object_key"
+'   account_id/region/access_key_id/secret_access_key -> keychain.json (first-run form)
+
+@enduml

@@ -1,0 +1,68 @@
+# --- Node / TypeScript ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+coverage/
+.nyc_output/
+.vitest/
+
+# Dependency manager logs / debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+*.log
+
+# Package manager auth / config that can hold tokens — never commit
+.npmrc
+.yarnrc
+.yarnrc.yml
+
+# Packed tarballs from `npm pack`
+*.tgz
+
+# --- Python / AWS CDK (devops/) ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+cdk.out/
+.cdk.staging/
+
+# --- Secrets / credentials / local config (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
+credentials
+.netrc
+
+# orbkey runtime artifacts, in case the tool is ever run from the repo dir.
+# The real vault lives under $XDG_CONFIG_HOME/orbkey, but guard anyway.
+# Root-anchored so they never shadow test/parity/fixtures/keychain.json.
+/keychain.json
+/state.json
+/config.json
+*.checkpoint
+/checkpoints/
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# --- Claude Code local working state ---
+# Personal tooling, not part of the product: the agent now lives in the
+# user-level ~/.claude/agents/, and agent-memory is regenerable local scratch.
+.claude/
