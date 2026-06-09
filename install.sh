@@ -2,7 +2,7 @@
 #
 # orbkey one-line installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/claytantor/orbkey-ts/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/claytantor/orbkey/main/install.sh | bash
 #
 # Clones the repo (or updates it if already present), installs dependencies,
 # builds, and links the `orbkey` binary onto your PATH. No secrets touched, no
@@ -10,8 +10,8 @@
 
 set -euo pipefail
 
-REPO_URL="${ORBKEY_REPO_URL:-https://github.com/claytantor/orbkey-ts.git}"
-INSTALL_DIR="${ORBKEY_INSTALL_DIR:-$HOME/.local/share/orbkey-ts}"
+REPO_URL="${ORBKEY_REPO_URL:-https://github.com/claytantor/orbkey.git}"
+INSTALL_DIR="${ORBKEY_INSTALL_DIR:-$HOME/.local/share/orbkey}"
 
 info() { printf '\033[1;36m==>\033[0m %s\n' "$1"; }
 err()  { printf '\033[1;31merror:\033[0m %s\n' "$1" >&2; }

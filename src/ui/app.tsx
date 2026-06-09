@@ -224,8 +224,11 @@ export function App({
   useInput(
     (input, key) => {
       lastActivityRef.current = Date.now();
-      // Ctrl+Q always exits.
-      if (key.ctrl && input === 'q') {
+      // Ctrl+Q / Ctrl+C always exit (clean teardown). We render with
+      // exitOnCtrlC:false so we can close the session first, so Ctrl+C must be
+      // handled here — otherwise it is dead on every screen, including the
+      // unlock/first-run splash.
+      if (key.ctrl && (input === 'q' || input === 'c')) {
         void handleExit();
         return;
       }

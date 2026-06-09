@@ -48,7 +48,7 @@ auto-clearing clipboard, and idle auto-lock.
 ### One-line install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/claytantor/orbkey-ts/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/claytantor/orbkey/main/install.sh | bash
 ```
 
 > Don't pipe scripts you haven't read. The installer just runs the manual steps
@@ -58,8 +58,8 @@ curl -fsSL https://raw.githubusercontent.com/claytantor/orbkey-ts/main/install.s
 ### Manual install (recommended if you cloned the repo)
 
 ```sh
-git clone https://github.com/claytantor/orbkey-ts.git
-cd orbkey-ts
+git clone https://github.com/claytantor/orbkey.git
+cd orbkey
 npm ci            # install dependencies
 npm run build     # compile TypeScript -> dist/
 npm link          # put the `orbkey` binary on your PATH
