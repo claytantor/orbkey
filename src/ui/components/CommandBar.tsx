@@ -28,7 +28,7 @@ export function CommandBar({
   const placeholder =
     glyph === ':'
       ? 'command — ⇥ complete · ↵ run'
-      : 'type to filter · Ctrl+Space for actions · : for commands';
+      : 'type to filter · ↵ edit · Ctrl+Space for actions · : for commands';
   return (
     <Box paddingX={1}>
       <Text color={theme.accent}>{`${prompt} `}</Text>

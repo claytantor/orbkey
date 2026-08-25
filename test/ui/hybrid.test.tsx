@@ -153,6 +153,41 @@ describe('inline live filter (Variant 3A) — bare typing still filters', () => 
   });
 });
 
+describe('filter → Enter edits the selected item', () => {
+  it('Enter opens the inline EDIT form for the filtered selection', async () => {
+    const session = seeded();
+    const { lastFrame, stdin, unmount } = render(<App session={session} />);
+    await tick();
+    // Filter down to a single match, then Enter (no arrow needed — it is row 0).
+    await type(stdin, 'gitlab');
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    const frame = lastFrame() ?? '';
+    // The inline edit form opened for the filtered row.
+    expect(frame).toContain('EDIT · field');
+    expect(frame).toContain('gitlab/token');
+    // It is an EDIT, not an ADD.
+    expect(frame).not.toContain('ADD · field');
+    unmount();
+  });
+
+  it('Enter on an empty filtered list surfaces "no secret selected"', async () => {
+    const session = seeded();
+    const { lastFrame, stdin, unmount } = render(<App session={session} />);
+    await tick();
+    await type(stdin, 'zzz-no-match');
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('no secret selected');
+    // No edit form was opened.
+    expect(frame).not.toContain('EDIT · field');
+    unmount();
+  });
+});
+
 describe('inline add/edit form (Variant 5A)', () => {
   it('opens in the detail pane with the list still visible; value field masked', async () => {
     const session = seeded();

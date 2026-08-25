@@ -389,13 +389,20 @@ export function App({
         forceRender();
         return;
       }
-      commandValueRef.current = '';
-      forceRender();
+      // Browse mode. A leading `/` is still a legacy command line.
       if (text.startsWith('/')) {
+        commandValueRef.current = '';
+        forceRender();
         void Promise.resolve(commands.run(text));
-      } else {
-        dispatch({ type: 'SET_FILTER', filter: text });
+        return;
       }
+      // Otherwise Enter opens the edit form for the selected row. Filtering is
+      // already live (onCommandChange), so there is nothing to "submit" — Enter
+      // is the discoverable filter → move → edit affordance. We keep the filter
+      // buffer intact so the list stays where the user left it when the form
+      // closes. `commands.edit('')` falls back to the selected key and surfaces
+      // "no secret selected" when the filtered list is empty.
+      commands.edit('');
     },
     [commands, state.mode, completions, completionIndex, exitToBrowse],
   );
