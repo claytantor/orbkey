@@ -20,6 +20,7 @@ export type Screen =
   | { kind: 'conflict'; conflict: UiConflict; context: 'launch' | 'sync' }
   | { kind: 'help' }
   | { kind: 'import'; defaultPath: string }
+  | { kind: 'export'; defaultPath: string; error: string | null }
   | { kind: 'rotateMenu' }
   | { kind: 'rotatePassword' }
   | { kind: 'rotateIam' };
@@ -117,6 +118,8 @@ export function modeLabel(screen: Screen, locked: boolean, mode: UiMode = 'brows
       return 'HELP';
     case 'import':
       return 'IMPORT';
+    case 'export':
+      return 'EXPORT';
     case 'rotateMenu':
       return 'ROTATE';
     case 'rotatePassword':

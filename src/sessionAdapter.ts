@@ -5,9 +5,24 @@
  * so the UI package keeps a clean boundary (no core / @aws-sdk imports there).
  */
 
+import {
+  chmodSync,
+  closeSync,
+  openSync,
+  readFileSync,
+  readSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { Session } from './core/session.js';
 import { IamCreds } from './core/keychain.js';
 import { parseKeepassXml } from './core/keepass.js';
+import {
+  buildExportDoc,
+  parseExportJson,
+  readExportDoc,
+  serializeExportDoc,
+} from './core/exportVault.js';
 import type { Secret } from './models.js';
 import type { ConflictContext } from './core/sync.js';
 import type {
@@ -16,7 +31,9 @@ import type {
   FirstRunInput,
   SessionPort,
   UiConflict,
+  UiExportReport,
   UiIamCreds,
+  UiImportKind,
   UiImportReport,
   UiKeepassEntry,
   UiLaunchResult,
@@ -136,6 +153,79 @@ export class SessionAdapter implements SessionPort {
   importKeepass(path: string): UiImportReport {
     const entries = parseKeepassXml(path);
     const r = this.session.importKeepass(entries);
+    return {
+      imported: r.imported,
+      skipped: r.skipped,
+      renamed: r.renamed,
+      errors: r.errors,
+      keys: r.keys,
+    };
+  }
+
+  /**
+   * Classify a file by its CONTENT, never its extension — a `.json` KeePass
+   * export and a `.txt` orbkey export should both land in the right parser.
+   * Never throws: an unreadable or unrecognized file is simply `'unknown'`,
+   * which the UI reports without opening a parser.
+   */
+  detectImportKind(path: string): UiImportKind {
+    let head: string;
+    try {
+      const fd = openSync(path, 'r');
+      try {
+        const buf = Buffer.alloc(4096);
+        const n = readSync(fd, buf, 0, buf.length, 0);
+        head = buf.subarray(0, n).toString('utf8');
+      } finally {
+        closeSync(fd);
+      }
+    } catch {
+      return 'unknown';
+    }
+    if (/"format"\s*:\s*"orbkey-export"/.test(head)) {
+      return 'orbkey';
+    }
+    if (head.replace(/^\uFEFF/, '').trimStart().startsWith('<')) {
+      return 'keepass';
+    }
+    return 'unknown';
+  }
+
+  /**
+   * Write the vault as a native orbkey export. Values are encrypted under
+   * `passphrase`; keys, notes and labels are encoded so no content can affect
+   * the JSON structure. Throws on any failure — the UI renders it inline.
+   */
+  exportVault(path: string, passphrase: string): UiExportReport {
+    const doc = buildExportDoc(this.session.exportSnapshot(), passphrase);
+    const text = serializeExportDoc(doc);
+    // `mode` on writeFileSync applies only when the file is CREATED; an
+    // overwrite silently keeps the old permissions. Remove any existing file
+    // and create with `wx`, so a previously world-readable export can never
+    // keep its mode. chmod after is belt-and-braces against a lenient umask.
+    try {
+      unlinkSync(path);
+    } catch {
+      // Not there, or not ours to remove — the `wx` open below reports it.
+    }
+    writeFileSync(path, text, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    chmodSync(path, 0o600);
+    return {
+      path,
+      secretCount: doc.secrets.length,
+      bytes: Buffer.byteLength(text, 'utf8'),
+    };
+  }
+
+  /**
+   * Read a native orbkey export back into this vault. Throws `ExportError` for
+   * a structurally bad file and `InvalidToken` for a wrong passphrase or a
+   * tampered one — the UI must not distinguish those last two to the user.
+   */
+  importOrbkey(path: string, passphrase: string): UiImportReport {
+    const doc = parseExportJson(readFileSync(path, 'utf8'));
+    const snap = readExportDoc(doc, passphrase);
+    const r = this.session.importSecrets(snap.secrets);
     return {
       imported: r.imported,
       skipped: r.skipped,

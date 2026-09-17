@@ -4,7 +4,8 @@ import { ModalFrame } from '../components/ModalFrame.js';
 import { theme } from '../theme.js';
 
 const COMMANDS: [string, string][] = [
-  ['/import [path]', 'Import secrets from a KeePass XML export'],
+  ['/import [path]', 'Import from a KeePass XML or an orbkey export'],
+  ['/export [path]', 'Export the vault to an encrypted orbkey JSON'],
   ['/add', 'Add a secret (key, value, labels, note)'],
   ['/get [key]', 'Reveal the selected/named secret; copy to clipboard'],
   ['/edit [key]', 'Edit the selected/named secret'],

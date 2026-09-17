@@ -26,6 +26,7 @@ import { ConfirmScreen } from './screens/ConfirmScreen.js';
 import { ConflictScreen } from './screens/ConflictScreen.js';
 import { HelpScreen } from './screens/HelpScreen.js';
 import { ImportScreen } from './screens/ImportScreen.js';
+import { ExportScreen } from './screens/ExportScreen.js';
 import {
   RotateMenuScreen,
   RotatePasswordScreen,
@@ -37,6 +38,8 @@ import type {
   FirstRunInput,
   SessionPort,
   UiConflict,
+  UiImportKind,
+  UiImportReport,
   UiKeepassEntry,
   UiIamCreds,
 } from './types.js';
@@ -51,6 +54,24 @@ function envInt(name: string, def: number): number {
 }
 
 const AUTOLOCK_SECONDS = envInt('ORBKEY_AUTOLOCK_MIN', 15) * 60;
+
+/** Counts only — an import report never carries a secret value. */
+function importSummary(report: UiImportReport): string {
+  return (
+    `imported ${report.imported}` +
+    (report.skipped ? `, skipped ${report.skipped}` : '') +
+    (report.renamed ? `, renamed ${report.renamed}` : '') +
+    (report.errors ? `, errors ${report.errors}` : '')
+  );
+}
+
+/** Human file size for the export status line. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
 
 export interface AppProps {
   session: SessionPort;
@@ -592,14 +613,62 @@ export function App({
         const report = session.importKeepass(path);
         dispatch({ type: 'STORE_CHANGED' });
         dispatch({ type: 'CLOSE_MODAL' });
-        setStatus(
-          `imported ${report.imported}` +
-            (report.skipped ? `, skipped ${report.skipped}` : '') +
-            (report.renamed ? `, renamed ${report.renamed}` : '') +
-            (report.errors ? `, errors ${report.errors}` : ''),
-        );
+        setStatus(importSummary(report));
       } catch (err) {
         setStatus(classifyError(err));
+      }
+    },
+    [session, setStatus],
+  );
+
+  // Orbkey-native import. A failure (typically a wrong export passphrase) is
+  // returned to the screen so it can be shown inline — the modal owns the whole
+  // viewport, so a status-line-only error would be invisible. The passphrase
+  // itself never appears in the message.
+  const handleImportOrbkey = useCallback(
+    (path: string, passphrase: string): { error: string } | null => {
+      try {
+        const report = session.importOrbkey(path, passphrase);
+        dispatch({ type: 'STORE_CHANGED' });
+        dispatch({ type: 'CLOSE_MODAL' });
+        setStatus(importSummary(report));
+        return null;
+      } catch (err) {
+        return { error: classifyError(err) };
+      }
+    },
+    [session, setStatus],
+  );
+
+  // Classification must never break the screen; an unreadable/absent file is
+  // simply 'unknown' and the screen says so.
+  const detectImport = useCallback(
+    (path: string): UiImportKind => {
+      try {
+        return session.detectImportKind(path);
+      } catch {
+        return 'unknown';
+      }
+    },
+    [session],
+  );
+
+  const handleExport = useCallback(
+    (path: string, passphrase: string) => {
+      try {
+        const report = session.exportVault(path, passphrase);
+        dispatch({ type: 'CLOSE_MODAL' });
+        // Metadata only: count, destination, size. Never a key, value, or the
+        // passphrase.
+        setStatus(
+          `exported ${report.secretCount} secrets to ${report.path} (${formatBytes(report.bytes)})`,
+        );
+      } catch (err) {
+        // Stay on the screen with an inline error so the user can retry.
+        dispatch({
+          type: 'SET_SCREEN',
+          screen: { kind: 'export', defaultPath: path, error: classifyError(err) },
+        });
       }
     },
     [session, setStatus],
@@ -743,8 +812,20 @@ export function App({
         <ImportScreen
           defaultPath={screen.defaultPath}
           isActive
+          onDetect={detectImport}
           onParse={parseKeepass}
           onImport={handleImport}
+          onImportOrbkey={handleImportOrbkey}
+          onCancel={() => dispatch({ type: 'CLOSE_MODAL' })}
+        />
+      );
+    case 'export':
+      return (
+        <ExportScreen
+          defaultPath={screen.defaultPath}
+          isActive
+          error={screen.error}
+          onExport={handleExport}
           onCancel={() => dispatch({ type: 'CLOSE_MODAL' })}
         />
       );

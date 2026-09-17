@@ -12,7 +12,9 @@ import type {
   FirstRunInput,
   SessionPort,
   UiConflict,
+  UiExportReport,
   UiIamCreds,
+  UiImportKind,
   UiImportReport,
   UiKeepassEntry,
   UiLaunchResult,
@@ -30,6 +32,16 @@ function fakeId(): string {
   counter += 1;
   return `fake-${counter}`;
 }
+
+/**
+ * What a *previously unseen* orbkey export file "contains" in the fake, so the
+ * import flow is drivable without exporting first. Values are obvious
+ * placeholders — the fake never holds real secret material.
+ */
+const FAKE_ORBKEY_ENTRIES: ReadonlyArray<Pick<UiSecret, 'key' | 'value' | 'note' | 'labels'>> = [
+  { key: 'orbkey/restored-1', value: 'restored-secret-1', note: 'from export', labels: ['restored'] },
+  { key: 'orbkey/restored-2', value: 'restored-secret-2', note: '', labels: ['restored'] },
+];
 
 export interface FakeSessionOptions {
   firstRun?: boolean;
@@ -53,6 +65,17 @@ export class FakeSession implements SessionPort {
   // Audit-friendly counters that tests can assert on.
   syncCount = 0;
   closed = false;
+  /** Number of completed `exportVault` calls (a rejected one does not count). */
+  exportCount = 0;
+  /** Destination of the last completed export. Never the passphrase. */
+  lastExportPath: string | null = null;
+  /**
+   * Snapshot written per destination path, standing in for the file on disk.
+   * The export PASSPHRASE is deliberately not retained anywhere — the fake
+   * models a bad passphrase with the sentinel below, exactly as
+   * `rotatePassword` does.
+   */
+  private exports = new Map<string, UiSecret[]>();
 
   constructor(opts: FakeSessionOptions = {}) {
     this.locked = opts.locked ?? false;
@@ -190,6 +213,70 @@ export class FakeSession implements SessionPort {
     }
     this.status = 'SYNCED';
     return { pushed: true, conflict: null };
+  }
+
+  /**
+   * Classify by extension, plus anything this fake has already exported (so a
+   * round-trip works whatever the caller named the file).
+   */
+  detectImportKind(path: string): UiImportKind {
+    const p = path.trim();
+    if (this.exports.has(p)) {
+      return 'orbkey';
+    }
+    const lower = p.toLowerCase();
+    if (lower.endsWith('.xml')) {
+      return 'keepass';
+    }
+    if (lower.endsWith('.json') || lower.endsWith('.orbkey')) {
+      return 'orbkey';
+    }
+    return 'unknown';
+  }
+
+  /**
+   * "Write" an export. Returns metadata only. `bytes` is an envelope estimate
+   * derived from the entry COUNT, never from plaintext lengths, so the report
+   * cannot be used to infer a value's size.
+   */
+  exportVault(path: string, passphrase: string): UiExportReport {
+    if (this.locked) {
+      throw new Error('vault is locked');
+    }
+    const dest = path.trim();
+    if (!dest) {
+      throw new Error('destination path is required');
+    }
+    if (!passphrase) {
+      throw new Error('passphrase is required');
+    }
+    const snapshot = this.listSecrets().map((s) => ({ ...s, labels: [...s.labels] }));
+    this.exports.set(dest, snapshot);
+    this.exportCount += 1;
+    this.lastExportPath = dest;
+    return { path: dest, secretCount: snapshot.length, bytes: 512 + snapshot.length * 384 };
+  }
+
+  /** Read back an export. `'wrong'` is the fake's incorrect-passphrase sentinel. */
+  importOrbkey(path: string, passphrase: string): UiImportReport {
+    if (!passphrase) {
+      throw new Error('passphrase is required');
+    }
+    if (passphrase === 'wrong') {
+      throw new Error('incorrect export passphrase');
+    }
+    const entries = this.exports.get(path.trim()) ?? FAKE_ORBKEY_ENTRIES;
+    let imported = 0;
+    let skipped = 0;
+    for (const e of entries) {
+      if (this.secrets.has(e.key)) {
+        skipped += 1;
+        continue;
+      }
+      this.addSecret(e.key, e.value, e.note, e.labels);
+      imported += 1;
+    }
+    return { imported, skipped, renamed: 0, errors: 0, keys: entries.map((e) => e.key) };
   }
 
   parseKeepass(_path: string): UiKeepassEntry[] {

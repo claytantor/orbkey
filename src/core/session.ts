@@ -23,7 +23,7 @@ import {
   type SyncStatus,
   VaultLocation,
 } from './sync.js';
-import type { Secret } from '../models.js';
+import type { Secret, VaultSnapshot } from '../models.js';
 
 export class SessionError extends Error {
   constructor(message: string) {
@@ -188,6 +188,20 @@ export class Session {
 
   importKeepass(entries: KeePassEntry[]): BulkImportReport {
     const report = this.requireStore().addSecretsBulk(entries);
+    if (report.imported > 0) {
+      this.afterMutation();
+    }
+    return report;
+  }
+
+  /** The whole unlocked vault as a value, for the native export format. */
+  exportSnapshot(): VaultSnapshot {
+    return this.requireStore().snapshot();
+  }
+
+  /** Merge secrets decoded from an orbkey export into this vault. */
+  importSecrets(secrets: readonly Secret[]): BulkImportReport {
+    const report = this.requireStore().addSecretsFromSnapshot(secrets);
     if (report.imported > 0) {
       this.afterMutation();
     }

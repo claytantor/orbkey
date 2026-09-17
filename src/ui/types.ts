@@ -63,6 +63,23 @@ export interface UiKeepassEntry {
   labels: string[];
 }
 
+/**
+ * Result of a `:export` run. Carries ONLY metadata — never a secret value and
+ * never the passphrase — so it is safe to render in the status line.
+ */
+export interface UiExportReport {
+  path: string;
+  secretCount: number;
+  bytes: number;
+}
+
+/**
+ * What an import path actually is, decided by the port (not the UI).
+ * `unknown` means "do not proceed" — the UI surfaces a clear message instead of
+ * guessing a parser.
+ */
+export type UiImportKind = 'keepass' | 'orbkey' | 'unknown';
+
 export interface UiIamCreds {
   accessKeyId: string;
   secretAccessKey: string;
@@ -123,8 +140,20 @@ export interface SessionPort {
   sync(): Promise<UiSyncReport>;
 
   // import
+  /** Classify a file before any parser touches it. Never throws on content. */
+  detectImportKind(path: string): UiImportKind;
   parseKeepass(path: string): UiKeepassEntry[];
   importKeepass(path: string): UiImportReport;
+  /** Import an orbkey-native export. `passphrase` decrypts the file's values. */
+  importOrbkey(path: string, passphrase: string): UiImportReport;
+
+  // export
+  /**
+   * Write the vault to `path` as an orbkey-native export whose secret values are
+   * encrypted under `passphrase`. Returns metadata only — the caller must never
+   * receive (or render) a value.
+   */
+  exportVault(path: string, passphrase: string): UiExportReport;
 
   // rotation
   rotatePassword(oldPassword: string, newPassword: string): void;

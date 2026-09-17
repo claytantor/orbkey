@@ -13,7 +13,13 @@
 
 import Database from 'better-sqlite3';
 import type { Database as DB } from 'better-sqlite3';
-import { type Label, type Secret, newId, utcnowIso } from '../models.js';
+import {
+  type Label,
+  type Secret,
+  type VaultSnapshot,
+  newId,
+  utcnowIso,
+} from '../models.js';
 import type { KeePassEntry } from './keepass.js';
 
 export const SCHEMA_VERSION = '1';
@@ -309,6 +315,88 @@ export class VaultStore {
         this.applyLabels(sid, entry.labels);
         existingKeys.add(key);
         existingCreds.add(credKey(password, username));
+        report.imported += 1;
+        report.keys.push(key);
+      } catch {
+        report.errors += 1;
+      }
+    }
+
+    this.rebuildFts();
+    return report;
+  }
+
+  /**
+   * The whole vault as a plain value, for export.
+   *
+   * `meta` is deliberately empty. The only rows in it are `schema_version` and
+   * `vault_id`, which identify THIS vault to the sync engine — carrying them
+   * into an export would let an import overwrite the importing vault's own
+   * identity and break sync, so the export format has no slot for them.
+   */
+  snapshot(): VaultSnapshot {
+    return {
+      secrets: this.listSecrets(),
+      labels: this.listLabels(),
+      meta: {},
+    };
+  }
+
+  /**
+   * Merge whole secrets (key, value, note, labels) from an orbkey export.
+   *
+   * Collision rules mirror {@link addSecretsBulk}: an identical (key, value)
+   * pair is skipped as already present, a key that exists with a DIFFERENT
+   * value is imported under `key-copy-N`, and anything else is inserted.
+   * `createdAt`/`updatedAt` carry over as provenance, but ids are always
+   * freshly minted so an import can never collide with a local primary key.
+   */
+  addSecretsFromSnapshot(secrets: readonly Secret[]): BulkImportReport {
+    const existingRows = this.db
+      .prepare('SELECT key, value FROM secrets')
+      .all() as Array<{ key: string; value: string }>;
+    const existingKeys = new Set<string>(existingRows.map((r) => r.key));
+    const pair = (k: string, v: string): string => JSON.stringify([k, v]);
+    const existingPairs = new Set<string>(
+      existingRows.map((r) => pair(r.key, r.value)),
+    );
+
+    const report: BulkImportReport = {
+      imported: 0,
+      skipped: 0,
+      renamed: 0,
+      errors: 0,
+      keys: [],
+    };
+
+    const insert = this.db.prepare(
+      'INSERT INTO secrets(id, key, value, note, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)',
+    );
+
+    for (const s of secrets) {
+      if (!s.key) {
+        report.errors += 1;
+        continue;
+      }
+      if (existingPairs.has(pair(s.key, s.value))) {
+        report.skipped += 1;
+        continue;
+      }
+      let key = s.key;
+      if (existingKeys.has(key)) {
+        let suffix = 1;
+        while (existingKeys.has(`${s.key}-copy-${suffix}`)) {
+          suffix += 1;
+        }
+        key = `${s.key}-copy-${suffix}`;
+        report.renamed += 1;
+      }
+      try {
+        const sid = newId();
+        insert.run(sid, key, s.value, s.note, s.createdAt, s.updatedAt);
+        this.applyLabels(sid, s.labels);
+        existingKeys.add(key);
+        existingPairs.add(pair(key, s.value));
         report.imported += 1;
         report.keys.push(key);
       } catch {

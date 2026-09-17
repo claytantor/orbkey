@@ -11,7 +11,8 @@
  */
 
 import type { Action, ConfirmIntent } from './state.js';
-import type { SessionPort, UiConflict } from './types.js';
+import { classifyError } from './errors.js';
+import type { SessionPort, UiConflict, UiImportKind } from './types.js';
 
 export interface CommandHelpers {
   /** The current list filter (for selection fallback). */
@@ -41,6 +42,7 @@ export interface Commands {
   delete(arg: string): void;
   search(arg: string): void;
   import(arg: string): void;
+  export(arg: string): void;
   sync(arg: string): Promise<void>;
   lock(arg: string): void;
   rotate(arg: string): void;
@@ -73,7 +75,8 @@ export const COMMAND_SPECS: readonly CommandSpec[] = [
   { name: 'search', description: 'filter the list' },
   { name: 'sync', description: 'push local changes to AWS' },
   { name: 'rotate', description: 'rotate passphrase or IAM key' },
-  { name: 'import', description: 'import from a KeePass file' },
+  { name: 'import', description: 'import from a KeePass or orbkey file' },
+  { name: 'export', description: 'export the vault to a file' },
   { name: 'lock', description: 'lock the vault' },
   { name: 'clipinfo', description: 'clipboard backend status' },
   { name: 'help', description: 'show the help reference' },
@@ -227,7 +230,34 @@ export function makeCommands(
       if (!requireUnlocked()) {
         return;
       }
-      dispatch({ type: 'SET_SCREEN', screen: { kind: 'import', defaultPath: arg } });
+      const path = arg.trim();
+      // A path given on the command line is classified BEFORE the screen opens,
+      // so `:import notes.txt` never lands the user in a parser that cannot read
+      // it. With no argument the screen classifies whatever the user types.
+      if (path) {
+        let kind: UiImportKind;
+        try {
+          kind = session.detectImportKind(path);
+        } catch (err) {
+          setStatus(classifyError(err));
+          return;
+        }
+        if (kind === 'unknown') {
+          setStatus(`unrecognized import file: ${path} (expected KeePass XML or an orbkey export)`);
+          return;
+        }
+      }
+      dispatch({ type: 'SET_SCREEN', screen: { kind: 'import', defaultPath: path } });
+    },
+
+    export(arg: string): void {
+      if (!requireUnlocked()) {
+        return;
+      }
+      dispatch({
+        type: 'SET_SCREEN',
+        screen: { kind: 'export', defaultPath: arg.trim(), error: null },
+      });
     },
 
     async sync(_arg: string): Promise<void> {
@@ -314,6 +344,9 @@ export function makeCommands(
           return true;
         case 'import':
           commands.import(arg);
+          return true;
+        case 'export':
+          commands.export(arg);
           return true;
         case 'sync':
           return commands.sync(arg).then(() => true);
