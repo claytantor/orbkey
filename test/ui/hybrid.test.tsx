@@ -261,7 +261,7 @@ describe('inline add/edit form (Variant 5A)', () => {
     unmount();
   });
 
-  it('renders a borderless note (no round frame) that wraps, plus an always-visible cheat line', async () => {
+  it('renders a borderless read-only note preview, plus an always-visible cheat line', async () => {
     const session = seeded();
     const { lastFrame, stdin, unmount } = render(<App session={session} columns={100} rows={32} />);
     await tick();
@@ -273,30 +273,43 @@ describe('inline add/edit form (Variant 5A)', () => {
     expect(opened).toContain('^S save');
     expect(opened).toContain('Esc discard');
     expect(opened).toContain('next');
-    // Move to the note field and type a long line.
+    expect(opened).toContain('^E note');
+    // The note is a read-only preview now; the text goes in through the
+    // full-screen vi editor (Enter on the note field).
     stdin.write(TAB); // value
     await tick();
     stdin.write(TAB); // labels
     await tick();
     stdin.write(TAB); // note
     await tick();
+    expect(lastFrame() ?? '').toContain('Enter to edit note');
+    stdin.write(ENTER); // open the editor
+    await tick();
+    await type(stdin, 'i');
     await type(
       stdin,
-      'this is a long note that should soft wrap to the detail pane width without any border',
+      'this is a long note that should be truncated to the detail pane width',
     );
+    stdin.write(ESC);
+    await tick();
+    await type(stdin, ':wq');
+    stdin.write(ENTER);
     await tick();
     const frame = lastFrame() ?? '';
-    // The note value wrapped across more than one rendered line (the words land
-    // on different rows), and there is NO rounded box-drawing frame around it.
+    // The note shows in the preview, and there is NO rounded box-drawing frame
+    // around it (borderless, as the TextArea version was).
     expect(frame).toContain('this is a long note');
+    expect(frame).toContain('Enter to edit note');
     expect(frame).not.toContain('╭'); // no round border top corner
     expect(frame).not.toContain('╰'); // no round border bottom corner
     unmount();
   });
 
-  it('Ctrl+S saves from the note field (where Enter inserts a newline) and persists the note', async () => {
+  it('Ctrl+S saves from the note field (where Enter opens the editor) and persists the note', async () => {
     const session = new FakeSession({ status: 'OFFLINE' });
-    const { stdin, unmount } = render(<App session={session} columns={100} rows={32} />);
+    const { lastFrame, stdin, unmount } = render(
+      <App session={session} columns={100} rows={32} />,
+    );
     await tick();
     await type(stdin, ':add');
     stdin.write(ENTER);
@@ -309,18 +322,30 @@ describe('inline add/edit form (Variant 5A)', () => {
     await tick();
     stdin.write(TAB); // note
     await tick();
-    await type(stdin, 'a multi line note');
-    // Enter inside the note must NOT save (it inserts a newline).
+    // Enter inside the note must NOT save — it opens the full-screen editor.
     stdin.write(ENTER);
     await tick();
     expect(session.getSecret('svc/token')).toBeNull();
-    // Ctrl+S from the note field saves.
+    expect(lastFrame() ?? '').toContain('note');
+    // Write a two-line note there and commit it back to the draft with :wq.
+    await type(stdin, 'i');
+    await type(stdin, 'a multi line note');
+    stdin.write(ENTER); // newline inside insert mode
+    await tick();
+    await type(stdin, 'second line');
+    stdin.write(ESC);
+    await tick();
+    await type(stdin, ':wq');
+    stdin.write(ENTER);
+    await tick();
+    expect(session.getSecret('svc/token')).toBeNull(); // :wq saves the DRAFT only
+    // Ctrl+S from the note field saves the form.
     stdin.write('\x13'); // Ctrl+S
     await tick();
     const saved = session.getSecret('svc/token');
     expect(saved).not.toBeNull();
     expect(saved?.note).toContain('a multi line note');
-    // The newline from the earlier Enter survived (multi-line note).
+    // The newline entered in the editor survived (multi-line note).
     expect(saved?.note).toContain('\n');
     unmount();
   });

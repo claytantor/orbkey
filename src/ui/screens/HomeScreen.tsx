@@ -94,6 +94,23 @@ export function suboptRows(
   }
 }
 
+/**
+ * Rows available to the body (list + detail pane) for a given terminal size and
+ * mode — everything the chrome does not claim. Exported so callers that render
+ * INTO the detail pane (the inline add/edit form) can size themselves to the
+ * same budget instead of guessing. HomeScreen itself uses this, so the two can
+ * never drift apart.
+ */
+export function homeBodyRows(
+  rows: number,
+  mode: UiMode,
+  columns: number,
+  completionMatches: number,
+): number {
+  const chromeRows = BASE_CHROME_ROWS + suboptRows(mode, Math.max(1, columns), completionMatches);
+  return Math.max(1, Math.max(chromeRows + 1, rows) - chromeRows);
+}
+
 /** Home (no modal): header / list+detail / [sub-options] / status bar / command bar. */
 export function HomeScreen(props: Props): React.ReactElement {
   const columns = Math.max(1, props.columns);
@@ -107,7 +124,7 @@ export function HomeScreen(props: Props): React.ReactElement {
   const { listWidth, detailWidth } = homeLayout(columns);
 
   // Body rows = everything not consumed by the (now dynamic) chrome. Always >= 1.
-  const bodyRows = Math.max(1, rows - chromeRows);
+  const bodyRows = homeBodyRows(props.rows, props.mode, columns, props.completions.length);
 
   const editing = props.editForm !== undefined;
   const mode = editing

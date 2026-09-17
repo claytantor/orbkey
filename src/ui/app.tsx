@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdin, useStdout } from 'ink';
 import {
   reducer,
@@ -18,13 +18,18 @@ import {
 } from './commands.js';
 import { leaderBindingFor } from './leader.js';
 import { useWindowSize } from './hooks/useWindowSize.js';
-import { HomeScreen, homeLayout } from './screens/HomeScreen.js';
+import { HomeScreen, homeLayout, homeBodyRows } from './screens/HomeScreen.js';
 import { UnlockScreen } from './screens/UnlockScreen.js';
 import { FirstRunScreen } from './screens/FirstRunScreen.js';
-import { AddEditForm, type AddEditResult } from './components/AddEditForm.js';
+import {
+  AddEditForm,
+  type AddEditResult,
+  type NoteEditorSession,
+} from './components/AddEditForm.js';
 import { ConfirmScreen } from './screens/ConfirmScreen.js';
 import { ConflictScreen } from './screens/ConflictScreen.js';
 import { HelpScreen } from './screens/HelpScreen.js';
+import { NoteEditorScreen } from './screens/NoteEditorScreen.js';
 import { ImportScreen } from './screens/ImportScreen.js';
 import { ExportScreen } from './screens/ExportScreen.js';
 import {
@@ -79,7 +84,11 @@ export interface AppProps {
   onCopyValue?: (value: string) => void;
   /** Probe clipboard backends. */
   clipInfo?: () => string;
-  /** Read clipboard (paste-note). */
+  /**
+   * Read clipboard. Unused since the note moved to the full-screen vi editor,
+   * which handles bracketed paste itself; kept so `src/index.ts` (and any other
+   * host) keeps type-checking.
+   */
   readClipboard?: () => string | null;
   /** Initial screen override (tests inject 'home' with an unlocked session). */
   initialScreen?: Screen;
@@ -104,7 +113,6 @@ export function App({
   session,
   onCopyValue,
   clipInfo,
-  readClipboard,
   initialScreen,
   onSettle,
 }: AppProps): React.ReactElement {
@@ -135,6 +143,21 @@ export function App({
   // is REACT STATE (not a ref) so the field counter in the status line actually
   // repaints as focus moves between fields during an edit.
   const [editField, setEditField] = React.useReducer((_: number, v: number) => v, 1);
+  // The full-screen note editor, opened from the inline add/edit form. App draws
+  // it, but the FORM owns the text: this holds only the snapshot + the callbacks
+  // the form handed over when it opened, so nothing about the draft lives here.
+  const [noteEditor, setNoteEditor] = useState<NoteEditorSession | null>(null);
+  const noteEditorOpen = noteEditor !== null;
+  const handleNoteEditor = useCallback((next: NoteEditorSession | null) => {
+    setNoteEditor(next);
+  }, []);
+  // Belt-and-braces: if the add/edit screen goes away by any other route, the
+  // editor must not survive it.
+  useEffect(() => {
+    if (state.screen.kind !== 'addEdit') {
+      setNoteEditor(null);
+    }
+  }, [state.screen.kind]);
 
   const setStatus = useCallback(
     (status: string) => dispatch({ type: 'SET_STATUS', status }),
@@ -260,6 +283,15 @@ export function App({
       // unlock/first-run splash.
       if (key.ctrl && (input === 'q' || input === 'c')) {
         void handleExit();
+        return;
+      }
+
+      // The full-screen note editor owns EVERY other key while it is open. Ink
+      // fans each keystroke out to every active handler with no consumption, so
+      // without this gate the Esc the user presses to leave insert mode would
+      // ALSO hit the router below and close the add/edit form, destroying the
+      // note they were writing.
+      if (noteEditorOpen) {
         return;
       }
 
@@ -767,8 +799,9 @@ export function App({
         <AddEditForm
           mode={screen.mode}
           initial={initial}
-          isActive
+          isActive={!noteEditorOpen}
           width={homeLayout(columns).detailWidth}
+          height={homeBodyRows(rows, state.mode, columns, completions.length)}
           onSave={(r) => handleAddEditSave(r, screen.mode, editingKey)}
           onCopyNote={(noteText) => {
             if (noteText) {
@@ -777,13 +810,40 @@ export function App({
               setStatus('note is empty');
             }
           }}
-          onPasteNote={() => (readClipboard ? readClipboard() : null)}
+          onNoteEditor={handleNoteEditor}
           onFieldChange={(f) => {
             setEditField(f);
           }}
         />
       );
-      return renderHome(form, screen.mode === 'add' ? 'ADD' : 'EDIT');
+      // The form subtree NEVER moves. Returning `form` on its own to make it
+      // full-screen would change its position in the React tree, which unmounts
+      // it and wipes the in-progress draft — the exact loss the editor exists to
+      // prevent. So Home (with the form inside it) stays mounted and is laid out
+      // as `display: none`, and the editor is drawn beside it at the full
+      // terminal size.
+      return (
+        <Box flexDirection="column">
+          <Box
+            display={noteEditorOpen ? 'none' : 'flex'}
+            flexDirection="column"
+          >
+            {renderHome(form, screen.mode === 'add' ? 'ADD' : 'EDIT')}
+          </Box>
+          {noteEditor !== null ? (
+            <NoteEditorScreen
+              initialText={noteEditor.initialText}
+              title={noteEditor.title}
+              width={columns}
+              height={rows}
+              isActive
+              onSave={noteEditor.onSave}
+              onCancel={noteEditor.onCancel}
+              onWrite={noteEditor.onWrite}
+            />
+          ) : null}
+        </Box>
+      );
     }
     case 'confirm':
       return (

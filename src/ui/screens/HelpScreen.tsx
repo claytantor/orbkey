@@ -21,6 +21,19 @@ const COMMANDS: [string, string][] = [
   ['/help', 'This overlay'],
 ];
 
+// Only the keys the editor actually wires (src/ui/vi/model.ts). Counts, visual
+// mode, operator+motion, registers, `.` and redo are NOT implemented, so they
+// are deliberately absent here.
+const NOTE_EDITOR_KEYS: [string, string][] = [
+  ['i a I A o O', 'Enter insert mode; Esc returns to normal'],
+  ['h j k l ←↓↑→', 'Move; 0 / $ line start / end; w b by word'],
+  ['gg G', 'First / last line'],
+  ['x dd yy p P u', 'Delete char / line, yank line, put below / above, undo'],
+  ['/text n N', 'Literal search forward, next / previous match'],
+  [':w :wq :x', 'Save the draft; :wq and :x also close the editor'],
+  [':q :q!', 'Close; :q refuses on unsaved changes, :q! discards them'],
+];
+
 /** Command reference overlay. */
 export function HelpScreen(): React.ReactElement {
   return (
@@ -47,12 +60,25 @@ export function HelpScreen(): React.ReactElement {
           </Text>
         </Text>
         <Text>
-          <Text bold>edit modal</Text>
-          <Text dimColor>{'  Ctrl+O copy note · Ctrl+P paste into note'}</Text>
+          <Text bold>edit form</Text>
+          <Text dimColor>
+            {'  Tab/Shift+Tab field · Ctrl+O copy note · Enter on note / Ctrl+E edit note · Ctrl+S save'}
+          </Text>
         </Text>
         <Text dimColor>
           Copy needs a clipboard backend (Wayland: wl-clipboard; X11: xclip).
         </Text>
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text bold>note editor (vi)</Text>
+        {NOTE_EDITOR_KEYS.map(([keys, desc]) => (
+          <Box key={keys}>
+            <Box width={18}>
+              <Text color={theme.accent}>{keys}</Text>
+            </Box>
+            <Text dimColor>{desc}</Text>
+          </Box>
+        ))}
       </Box>
     </ModalFrame>
   );
