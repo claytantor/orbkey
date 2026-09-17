@@ -52,17 +52,22 @@ curl -fsSL https://raw.githubusercontent.com/claytantor/orbkey/main/install.sh |
 ```
 
 > Don't pipe scripts you haven't read. The installer just runs the manual steps
-> below — clone, `npm ci`, `npm run build`, then `npm link` so the `orbkey`
-> command is on your `PATH`. Read it first if you like.
+> below — clone into `~/.local/share/orbkey`, install dependencies, build, then
+> `npm link` so the `orbkey` command is on your `PATH`. Read it first if you
+> like.
+
+Because the install *is* a git checkout, `orbkey --update` can move it to the
+newest tagged release and rebuild it in place — see
+[Updating](#updating).
 
 ### Manual install (recommended if you cloned the repo)
 
 ```sh
 git clone https://github.com/claytantor/orbkey.git
 cd orbkey
-npm ci            # install dependencies
-npm run build     # compile TypeScript -> dist/
-npm link          # put the `orbkey` binary on your PATH
+pnpm install --frozen-lockfile   # or: npm ci
+pnpm run build                   # compile TypeScript -> dist/
+npm link                         # put the `orbkey` binary on your PATH
 ```
 
 Requirements: **Node.js ≥ 20** and a real terminal (TTY). On Linux you'll also
@@ -87,6 +92,52 @@ That backend is created with the supplied CDK stack — see
 If you already have a vault (e.g. created by the Python orbkey), launch lands on
 the **Unlock** screen — type your password and you're in. orbkey reads its
 config from `$XDG_CONFIG_HOME/orbkey` (default `~/.config/orbkey`).
+
+### Command-line flags
+
+orbkey is a TUI first — every flag below is a one-shot command that prints to
+stdout and exits without starting the interface.
+
+| Flag | What it does |
+| --- | --- |
+| *(none)* | Launch the interactive TUI |
+| `--version`, `-v` | Print the installed version |
+| `--help`, `-h` | Print usage |
+| `--update` | Update to the newest tagged release, then relaunch |
+| `--update --yes`, `-y` | Same, without the confirmation prompt |
+| `--update --dry-run` | Report what an update would do, change nothing |
+
+Anything else exits `2` with usage on stderr.
+
+### Updating
+
+```sh
+orbkey --update
+```
+
+The installed program is a git checkout, so updating is a fast-forward of that
+checkout onto the newest **tagged release** — orbkey never tracks a branch.
+Before it changes anything, `--update`:
+
+1. confirms `origin` really is `claytantor/orbkey`, and refuses otherwise;
+2. refuses if the checkout has uncommitted changes (that's a dev checkout, and
+   an update would clobber your work);
+3. fetches tags — unshallowing the `--depth 1` clone the installer makes, since
+   release tags aren't in a shallow clone;
+4. refuses unless `HEAD` is an **ancestor** of the target tag, which is what
+   blocks a downgrade or a rewritten history;
+5. shows you `current -> target` plus the commits in between, and asks for
+   confirmation. The default is **no** — a bare Enter does not update.
+
+Only then does it check out the tag, reinstall dependencies with the lockfile's
+package manager, rebuild, and relaunch the freshly built binary. Use
+`--dry-run` to see the plan without touching anything, or `--yes` to skip the
+prompt in a script (`--update` needs a terminal to prompt; without one, pass
+`--yes` or it refuses).
+
+The updater never runs on its own, never runs at TUI launch, and touches
+nothing but the install checkout — not your vault, keychain, config, or AWS
+credentials.
 
 ---
 
@@ -287,12 +338,12 @@ orbkey keeps three files under `$XDG_CONFIG_HOME/orbkey`:
 ## Development
 
 ```sh
-npm install
-npm run dev        # run from source with tsx
-npm test           # full vitest suite (core, parity, UI)
-npm run typecheck  # tsc --noEmit, strict
-npm run lint       # eslint
-npm run build      # tsc -> dist/
+pnpm install        # or: npm install
+pnpm run dev        # run from source with tsx
+pnpm test           # full vitest suite (core, parity, UI)
+pnpm run typecheck  # tsc --noEmit, strict
+pnpm run lint       # eslint
+pnpm run build      # tsc -> dist/
 ```
 
 The test suite includes a **parity** layer that loads fixtures produced by the
