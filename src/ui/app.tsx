@@ -202,6 +202,15 @@ export function App({
   const enterCommandMode = useCallback(() => {
     commandValueRef.current = '';
     setCompletionIndex(0);
+    // Pin the CURRENT selection before dropping the filter. While a filter is
+    // active the selected row is usually derived (`secrets[0]`) rather than
+    // stored, so clearing the filter would re-derive it against the full list
+    // and silently move the cursor to row 0 — selection-based commands like
+    // `:edit` would then act on the wrong secret.
+    const pinned = selectedKeyRef.current;
+    if (pinned) {
+      dispatch({ type: 'SET_SELECTED', key: pinned });
+    }
     dispatch({ type: 'SET_FILTER', filter: '' });
     dispatch({ type: 'SET_MODE', mode: 'command' });
     forceRender();
@@ -303,14 +312,10 @@ export function App({
         }
         return;
       }
-      // `:` on an empty buffer opens command mode. We check the reducer's
-      // `filter` (stable during this synchronous event) rather than the bottom-
-      // bar ref, because the CommandBar TextField's onChange may have already
-      // mutated the ref to ":" in the same keystroke.
-      if (input === ':' && state.filter === '' && !session.locked) {
-        enterCommandMode();
-        return;
-      }
+      // NOTE: `:` is NOT handled here. The CommandBar's TextField onChange
+      // fires before this handler, so by the time we saw the keystroke the
+      // filter had already absorbed the ':' and the selection had been
+      // re-derived against zero matches. onCommandChange owns it instead.
       if (key.ctrl && input === 'r') {
         if (!session.locked) {
           dispatch({ type: 'TOGGLE_REVEAL' });
@@ -366,11 +371,22 @@ export function App({
         setCompletionIndex(0);
         return;
       }
+      // A typed `:` opens command mode instead of filtering — filter or no
+      // filter. This lives here rather than in the key handler because this
+      // callback runs FIRST in a keystroke: at this point `state.filter` and
+      // the derived selection still reflect the buffer WITHOUT the colon, so
+      // enterCommandMode can pin the row the user was actually looking at.
+      // Requiring an empty buffer (the old rule) broke the normal workflow of
+      // filtering down to a row and then running a command on it.
+      if (value.endsWith(':') && !session.locked) {
+        enterCommandMode();
+        return;
+      }
       if (!value.startsWith('/')) {
         dispatch({ type: 'SET_FILTER', filter: value });
       }
     },
-    [state.mode],
+    [state.mode, session, enterCommandMode],
   );
 
   const onCommandSubmit = useCallback(
