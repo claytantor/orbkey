@@ -6,7 +6,7 @@
   "author": "claytantor",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/claytantor/orbkey-ts.git"
+    "url": "git+https://github.com/claytantor/orbkey.git"
   },
   "type": "module",
   "bin": {
